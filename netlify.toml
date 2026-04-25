@@ -7,3 +7,12 @@
 [dev]
   command = "bun run dev"
   port = 3000
+
+# AI chat is served by an Edge Function so streaming works without the
+# AWS Lambda response buffer that drops connections after 10s of idle.
+# The function file `netlify/edge-functions/chat.ts` is auto-generated from
+# `analysis.md` by the prebuild script — its inline `export const config`
+# also declares the path, this block is the explicit/redundant guarantee.
+[[edge_functions]]
+  function = "chat"
+  path = "/api/chat"
