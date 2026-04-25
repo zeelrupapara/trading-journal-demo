@@ -22,7 +22,7 @@ type Conversation = { id: string; title: string; messages: Msg[]; updated: numbe
 const CHAT_KEY = "qj_chats";
 
 const SUGGESTIONS = [
-  "Summarize my last 30 days",
+  "Review my last week",
   "Which symbol is my most profitable?",
   "What's my average R:R per strategy?",
   "Worst day of the week?",
