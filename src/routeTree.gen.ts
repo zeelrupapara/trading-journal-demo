@@ -12,7 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as AppProfileRouteImport } from './routes/_app.profile'
 import { Route as AppJournalRouteImport } from './routes/_app.journal'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
@@ -32,11 +31,6 @@ const AppRoute = AppRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiChatRoute = ApiChatRouteImport.update({
-  id: '/api/chat',
-  path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppProfileRoute = AppProfileRouteImport.update({
@@ -78,7 +72,6 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AppDashboardRoute
   '/journal': typeof AppJournalRoute
   '/profile': typeof AppProfileRoute
-  '/api/chat': typeof ApiChatRoute
   '/trade/$id': typeof AppTradeIdRoute
 }
 export interface FileRoutesByTo {
@@ -89,7 +82,6 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AppDashboardRoute
   '/journal': typeof AppJournalRoute
   '/profile': typeof AppProfileRoute
-  '/api/chat': typeof ApiChatRoute
   '/trade/$id': typeof AppTradeIdRoute
 }
 export interface FileRoutesById {
@@ -102,7 +94,6 @@ export interface FileRoutesById {
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/journal': typeof AppJournalRoute
   '/_app/profile': typeof AppProfileRoute
-  '/api/chat': typeof ApiChatRoute
   '/_app/trade/$id': typeof AppTradeIdRoute
 }
 export interface FileRouteTypes {
@@ -115,7 +106,6 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/journal'
     | '/profile'
-    | '/api/chat'
     | '/trade/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -126,7 +116,6 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/journal'
     | '/profile'
-    | '/api/chat'
     | '/trade/$id'
   id:
     | '__root__'
@@ -138,7 +127,6 @@ export interface FileRouteTypes {
     | '/_app/dashboard'
     | '/_app/journal'
     | '/_app/profile'
-    | '/api/chat'
     | '/_app/trade/$id'
   fileRoutesById: FileRoutesById
 }
@@ -146,7 +134,6 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
-  ApiChatRoute: typeof ApiChatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -170,13 +157,6 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/chat': {
-      id: '/api/chat'
-      path: '/api/chat'
-      fullPath: '/api/chat'
-      preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/profile': {
@@ -248,7 +228,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
-  ApiChatRoute: ApiChatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

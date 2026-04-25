@@ -8,7 +8,7 @@ import { CsvImport } from "@/components/app/CsvImport";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Send, Sparkles, Bot, User, Plus, MessageSquare, Brain } from "lucide-react";
-import { streamChat } from "@/lib/ai-chat";
+import { chatWithAI } from "@/lib/ai-chat";
 import { Markdown } from "@/components/app/Markdown";
 import { cn } from "@/lib/utils";
 
@@ -97,68 +97,26 @@ function AIPage() {
     setInput("");
     setBusy(true);
 
-    // Helper that mutates the active conversation's last assistant message in
-    // place. Used while the Gemini stream is still flowing.
-    const upsertAssistant = (content: string, isFirst: boolean) => {
-      setChats((prev) =>
-        prev.map((c) => {
-          if (c.id !== updated.id) return c;
-          if (isFirst) {
-            return {
-              ...c,
-              messages: [...c.messages, { role: "assistant", content }],
-              updated: Date.now(),
-            };
-          }
-          const msgs = [...c.messages];
-          msgs[msgs.length - 1] = { role: "assistant", content };
-          return { ...c, messages: msgs, updated: Date.now() };
-        }),
-      );
-    };
-
     try {
       // Pre-aggregated context — way smaller than dumping all trades raw, and
       // means the model isn't recomputing what the dashboard already knows.
       const ctx = JSON.stringify(aiContext(trades));
-      let collected = "";
-      let firstChunk = true;
-      for await (const chunk of streamChat({
-        messages: updated.messages,
-        tradesContext: ctx,
-      })) {
-        if (!chunk) continue;
-        collected += chunk;
-        upsertAssistant(collected, firstChunk);
-        if (firstChunk) {
-          // Hide the typing dots once real text starts arriving so the user
-          // sees the response replacing the placeholder, not on top of it.
-          setBusy(false);
-          firstChunk = false;
-        }
-      }
-      if (firstChunk) upsertAssistant("No response.", true);
-
-      // One write to localStorage at the end — no need to thrash on every chunk.
-      setChats((prev) => {
-        try {
-          window.localStorage.setItem(CHAT_KEY, JSON.stringify(prev));
-        } catch {
-          // Quota / private mode — non-fatal.
-        }
-        return prev;
-      });
+      const res = await chatWithAI({ data: { messages: updated.messages, tradesContext: ctx } });
+      const aiMsg: Msg = { role: "assistant", content: res.content };
+      const final: Conversation = {
+        ...updated,
+        messages: [...updated.messages, aiMsg],
+        updated: Date.now(),
+      };
+      persist(nextChats.map((c) => (c.id === final.id ? final : c)));
     } catch (e) {
       const msg = e instanceof Error ? e.message : "request failed";
-      upsertAssistant("Error: " + msg, true);
-      setChats((prev) => {
-        try {
-          window.localStorage.setItem(CHAT_KEY, JSON.stringify(prev));
-        } catch {
-          // ignore
-        }
-        return prev;
-      });
+      const aiMsg: Msg = {
+        role: "assistant",
+        content: "Error: " + msg,
+      };
+      const final: Conversation = { ...updated, messages: [...updated.messages, aiMsg] };
+      persist(nextChats.map((c) => (c.id === final.id ? final : c)));
     } finally {
       setBusy(false);
     }
