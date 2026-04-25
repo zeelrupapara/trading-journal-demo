@@ -1,13 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
 // The AI's persona, schema, and formatting guidance live in analysis.md at the
 // project root and are bundled at build time via Vite's `?raw` loader so this
-// works in both Node and edge (Cloudflare Workers) runtimes — no fs needed.
+// works in any runtime — no fs needed.
 import analysisPrompt from "../../analysis.md?raw";
 
 type ChatMsg = { role: "user" | "assistant" | "system"; content: string };
 type Payload = { messages: ChatMsg[]; tradesContext: string };
 
-type GeminiResponse = {
+export type AiChunk = { content: string };
+
+type GeminiStreamFrame = {
   candidates?: Array<{
     content?: { parts?: Array<{ text?: string }> };
   }>;
@@ -15,6 +17,21 @@ type GeminiResponse = {
 
 const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
+const oneShotStream = (text: string): ReadableStream<AiChunk> =>
+  new ReadableStream<AiChunk>({
+    start(c) {
+      c.enqueue({ content: text });
+      c.close();
+    },
+  });
+
+/**
+ * Streaming AI chat. Returns a `ReadableStream<AiChunk>` instead of a single
+ * JSON blob — Gemini's full answer can take 15–30s on large contexts and any
+ * serverless gateway (Netlify, Cloudflare) will kill an idle connection well
+ * before then. Streaming keeps bytes flowing so the gateway never times out
+ * and the user sees progressive output.
+ */
 export const chatWithAI = createServerFn({ method: "POST" })
   .inputValidator((input: Payload) => {
     if (!input || !Array.isArray(input.messages)) throw new Error("invalid payload");
@@ -23,7 +40,7 @@ export const chatWithAI = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return { content: "AI is not configured. Please set GEMINI_API_KEY in your environment." };
+      return oneShotStream("AI is not configured. Please set GEMINI_API_KEY in your environment.");
     }
 
     const now = new Date();
@@ -53,16 +70,16 @@ ${referenceDates}
 The user's trade journal data (JSON):
 ${data.tradesContext}`;
 
-    // Gemini uses "user" and "model" roles (not "assistant"), and system prompt
-    // goes in a top-level systemInstruction field.
+    // Gemini uses "user" / "model" roles (not "assistant"); system prompt goes
+    // in a top-level systemInstruction.
     const contents = data.messages.map((m) => ({
       role: m.role === "assistant" ? "model" : "user",
       parts: [{ text: m.content }],
     }));
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`;
 
-    const res = await fetch(url, {
+    const upstream = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -72,23 +89,56 @@ ${data.tradesContext}`;
       }),
     });
 
-    if (!res.ok) {
-      const t = await res.text();
-      if (res.status === 429)
-        return { content: "Rate limit reached. Please try again in a moment." };
-      if (res.status === 401 || res.status === 403 || /API_KEY_INVALID/i.test(t))
-        return {
-          content:
-            "Gemini auth failed — your GEMINI_API_KEY is invalid. Get a fresh key at https://aistudio.google.com/apikey.",
-        };
-      return { content: `Gemini error (${res.status}): ${t.slice(0, 300)}` };
+    if (!upstream.ok || !upstream.body) {
+      const t = await upstream.text().catch(() => "");
+      if (upstream.status === 429) return oneShotStream("Rate limit reached. Please try again in a moment.");
+      if (upstream.status === 401 || upstream.status === 403 || /API_KEY_INVALID/i.test(t)) {
+        return oneShotStream(
+          "Gemini auth failed — your GEMINI_API_KEY is invalid. Get a fresh key at https://aistudio.google.com/apikey.",
+        );
+      }
+      return oneShotStream(`Gemini error (${upstream.status}): ${t.slice(0, 300)}`);
     }
 
-    const json = (await res.json()) as GeminiResponse;
-    const content =
-      json.candidates?.[0]?.content?.parts
-        ?.map((p) => p.text)
-        .filter((t): t is string => Boolean(t))
-        .join("\n") || "No response.";
-    return { content };
+    // Translate Gemini's SSE frames ("data: {json}\n\n") into typed AiChunks.
+    return new ReadableStream<AiChunk>({
+      async start(controller) {
+        const reader = upstream.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            // SSE frames are separated by blank lines.
+            const frames = buffer.split("\n\n");
+            buffer = frames.pop() ?? "";
+            for (const frame of frames) {
+              const line = frame.trim();
+              if (!line.startsWith("data:")) continue;
+              const payload = line.slice(5).trim();
+              if (!payload || payload === "[DONE]") continue;
+              try {
+                const parsed = JSON.parse(payload) as GeminiStreamFrame;
+                const text =
+                  parsed.candidates?.[0]?.content?.parts
+                    ?.map((p) => p.text)
+                    .filter((t): t is string => Boolean(t))
+                    .join("") ?? "";
+                if (text) controller.enqueue({ content: text });
+              } catch {
+                // Ignore malformed frames — Gemini occasionally emits keepalives.
+              }
+            }
+          }
+        } catch (e) {
+          controller.enqueue({
+            content: `\n\n_(stream error: ${e instanceof Error ? e.message : "unknown"})_`,
+          });
+        } finally {
+          controller.close();
+        }
+      },
+    });
   });

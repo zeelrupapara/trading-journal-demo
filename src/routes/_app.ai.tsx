@@ -97,26 +97,74 @@ function AIPage() {
     setInput("");
     setBusy(true);
 
+    // Helper that mutates the active conversation's last assistant message in
+    // place. Used while the Gemini stream is still flowing.
+    const upsertAssistant = (content: string, isFirst: boolean) => {
+      setChats((prev) =>
+        prev.map((c) => {
+          if (c.id !== updated.id) return c;
+          if (isFirst) {
+            return {
+              ...c,
+              messages: [...c.messages, { role: "assistant", content }],
+              updated: Date.now(),
+            };
+          }
+          const msgs = [...c.messages];
+          msgs[msgs.length - 1] = { role: "assistant", content };
+          return { ...c, messages: msgs, updated: Date.now() };
+        }),
+      );
+    };
+
     try {
       // Pre-aggregated context — way smaller than dumping all trades raw, and
       // means the model isn't recomputing what the dashboard already knows.
       const ctx = JSON.stringify(aiContext(trades));
-      const res = await chatWithAI({ data: { messages: updated.messages, tradesContext: ctx } });
-      const aiMsg: Msg = { role: "assistant", content: res.content };
-      const final: Conversation = {
-        ...updated,
-        messages: [...updated.messages, aiMsg],
-        updated: Date.now(),
-      };
-      persist(nextChats.map((c) => (c.id === final.id ? final : c)));
+      const stream = await chatWithAI({
+        data: { messages: updated.messages, tradesContext: ctx },
+      });
+      if (!stream) throw new Error("empty response");
+
+      const reader = stream.getReader();
+      let collected = "";
+      let firstChunk = true;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value?.content) {
+          collected += value.content;
+          upsertAssistant(collected, firstChunk);
+          if (firstChunk) {
+            // Hide the typing dots once real text starts arriving so the user
+            // sees the response replacing the placeholder, not on top of it.
+            setBusy(false);
+            firstChunk = false;
+          }
+        }
+      }
+      if (firstChunk) upsertAssistant("No response.", true);
+
+      // One write to localStorage at the end — no need to thrash on every chunk.
+      setChats((prev) => {
+        try {
+          window.localStorage.setItem(CHAT_KEY, JSON.stringify(prev));
+        } catch {
+          // Quota / private mode — non-fatal.
+        }
+        return prev;
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "request failed";
-      const aiMsg: Msg = {
-        role: "assistant",
-        content: "Error: " + msg,
-      };
-      const final: Conversation = { ...updated, messages: [...updated.messages, aiMsg] };
-      persist(nextChats.map((c) => (c.id === final.id ? final : c)));
+      upsertAssistant("Error: " + msg, true);
+      setChats((prev) => {
+        try {
+          window.localStorage.setItem(CHAT_KEY, JSON.stringify(prev));
+        } catch {
+          // ignore
+        }
+        return prev;
+      });
     } finally {
       setBusy(false);
     }
