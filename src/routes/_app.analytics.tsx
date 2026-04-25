@@ -1,0 +1,178 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
+import { useTrades, fmtCurrency } from "@/lib/trades";
+import { PageHeader } from "@/components/app/PageHeader";
+import { MetricCard } from "@/components/app/MetricCard";
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+export const Route = createFileRoute("/_app/analytics")({
+  component: AnalyticsPage,
+});
+
+function AnalyticsPage() {
+  const { trades } = useTrades();
+  const today = new Date();
+  const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+
+  // Group P&L by day
+  const dayMap = useMemo(() => {
+    const m = new Map<string, { pnl: number; count: number }>();
+    trades.forEach(t => {
+      const k = new Date(t.date).toDateString();
+      const prev = m.get(k) || { pnl: 0, count: 0 };
+      m.set(k, { pnl: prev.pnl + t.pnl, count: prev.count + 1 });
+    });
+    return m;
+  }, [trades]);
+
+  // Build calendar grid (Mon-Sun)
+  const monthGrid = useMemo(() => {
+    const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+    const last = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+    const startDay = (first.getDay() + 6) % 7; // Mon=0
+    const cells: Array<{ date: Date | null }> = [];
+    for (let i = 0; i < startDay; i++) cells.push({ date: null });
+    for (let d = 1; d <= last.getDate(); d++) {
+      cells.push({ date: new Date(cursor.getFullYear(), cursor.getMonth(), d) });
+    }
+    while (cells.length % 7 !== 0) cells.push({ date: null });
+    return cells;
+  }, [cursor]);
+
+  // Month stats
+  const monthStats = useMemo(() => {
+    const inMonth = trades.filter(t => {
+      const d = new Date(t.date);
+      return d.getMonth() === cursor.getMonth() && d.getFullYear() === cursor.getFullYear();
+    });
+    const wins = inMonth.filter(t => t.pnl > 0);
+    const net = inMonth.reduce((s, t) => s + t.pnl, 0);
+    const best = inMonth.reduce((b, t) => (t.pnl > (b?.pnl ?? -Infinity) ? t : b), inMonth[0]);
+    const worst = inMonth.reduce((b, t) => (t.pnl < (b?.pnl ?? Infinity) ? t : b), inMonth[0]);
+    const days = new Set(inMonth.map(t => new Date(t.date).toDateString())).size;
+    return {
+      net,
+      trades: inMonth.length,
+      winRate: inMonth.length ? (wins.length / inMonth.length) * 100 : 0,
+      best, worst,
+      activeDays: days,
+    };
+  }, [trades, cursor]);
+
+  const dailyBar = useMemo(() => {
+    return monthGrid
+      .filter(c => c.date)
+      .map(c => {
+        const stat = dayMap.get(c.date!.toDateString());
+        return { day: c.date!.getDate(), pnl: stat?.pnl || 0 };
+      })
+      .filter(d => d.pnl !== 0);
+  }, [monthGrid, dayMap]);
+
+  const monthLabel = cursor.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+  return (
+    <>
+      <PageHeader title="Performance" subtitle="Calendar view of your trading days" />
+      <div className="p-8 space-y-6">
+        {/* Month KPIs */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <MetricCard label={`Net P&L · ${cursor.toLocaleDateString("en-US", { month: "short" })}`}
+            value={fmtCurrency(monthStats.net)} tone={monthStats.net >= 0 ? "profit" : "loss"}
+            sub={`${monthStats.trades} trades · ${monthStats.activeDays} days`} />
+          <MetricCard label="Win Rate" value={`${monthStats.winRate.toFixed(1)}%`} sub="this month" />
+          <MetricCard label="Best Day"
+            value={monthStats.best ? fmtCurrency(monthStats.best.pnl) : "—"}
+            tone="profit"
+            sub={monthStats.best ? `${monthStats.best.symbol} · ${new Date(monthStats.best.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""} />
+          <MetricCard label="Worst Day"
+            value={monthStats.worst ? fmtCurrency(monthStats.worst.pnl) : "—"}
+            tone="loss"
+            sub={monthStats.worst ? `${monthStats.worst.symbol} · ${new Date(monthStats.worst.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""} />
+        </div>
+
+        {/* Calendar */}
+        <div className="metric-card p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}
+                className="h-8 w-8 rounded border border-border hover:bg-accent/50 flex items-center justify-center">
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="text-sm font-semibold uppercase tracking-wider px-3">{monthLabel}</span>
+              <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}
+                className="h-8 w-8 rounded border border-border hover:bg-accent/50 flex items-center justify-center">
+                <ChevronRight className="h-4 w-4" />
+              </button>
+              <button onClick={() => setCursor(new Date(today.getFullYear(), today.getMonth(), 1))}
+                className="ml-2 text-xs px-3 py-1.5 rounded border border-border hover:bg-accent/50 uppercase tracking-wider font-medium">
+                Today
+              </button>
+            </div>
+            <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider text-muted-foreground">
+              <div className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-profit" />Profit</div>
+              <div className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-loss" />Loss</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-7 gap-1.5">
+            {["MON","TUE","WED","THU","FRI","SAT","SUN"].map(d => (
+              <div key={d} className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold px-2 pb-2">{d}</div>
+            ))}
+            {monthGrid.map((c, i) => {
+              if (!c.date) return <div key={i} className="aspect-square rounded bg-secondary/20" />;
+              const stat = dayMap.get(c.date.toDateString());
+              const isToday = c.date.toDateString() === today.toDateString();
+              const tone = stat ? (stat.pnl >= 0 ? "profit" : "loss") : null;
+              return (
+                <div key={i} className={cn(
+                  "aspect-square rounded p-2 flex flex-col justify-between border transition-colors",
+                  isToday ? "border-primary" : "border-border",
+                  tone === "profit" && "bg-profit/10 border-profit/30",
+                  tone === "loss" && "bg-loss/10 border-loss/30",
+                  !tone && "bg-secondary/20",
+                )}>
+                  <div className="flex items-start justify-between">
+                    <span className={cn("text-[11px] font-medium", isToday && "text-primary")}>{c.date.getDate()}</span>
+                    {stat && <span className="text-[9px] text-muted-foreground font-mono">{stat.count}t</span>}
+                  </div>
+                  {stat && (
+                    <div className={cn("text-[10px] font-mono font-semibold tabular-nums truncate",
+                      stat.pnl >= 0 ? "text-profit" : "text-loss"
+                    )}>{fmtCurrency(stat.pnl)}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Daily P&L bar */}
+        <div className="metric-card p-5">
+          <h3 className="text-xs uppercase tracking-widest font-semibold mb-4">Daily P&L · {monthLabel}</h3>
+          <div className="h-[260px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dailyBar}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="day" stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} />
+                <YAxis stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v}`} />
+                <Tooltip
+                  contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12 }}
+                  formatter={(v: number) => [fmtCurrency(v), "Net P&L"]}
+                  labelFormatter={(v) => `Day ${v}`}
+                />
+                <Bar dataKey="pnl" radius={[3, 3, 0, 0]}>
+                  {dailyBar.map((d, i) => (
+                    <Cell key={i} fill={d.pnl >= 0 ? "var(--profit)" : "var(--loss)"} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
