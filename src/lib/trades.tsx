@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 
 export type Strategy = "Strategy 1" | "Strategy 2" | "Strategy 3" | "Unassigned";
 export type Side = "LONG" | "SHORT";
@@ -42,25 +42,21 @@ const SAMPLE: Trade[] = [
 ];
 
 export function TradesProvider({ children }: { children: ReactNode }) {
-  const [trades, setTrades] = useState<Trade[]>([]);
-
-  useEffect(() => {
+  const [trades, setTrades] = useState<Trade[]>(() => {
+    if (typeof window === "undefined") return SAMPLE;
     try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) {
-        setTrades(JSON.parse(raw));
-      } else {
-        setTrades(SAMPLE);
-        localStorage.setItem(KEY, JSON.stringify(SAMPLE));
-      }
+      const raw = window.localStorage.getItem(KEY);
+      if (raw) return JSON.parse(raw);
+      window.localStorage.setItem(KEY, JSON.stringify(SAMPLE));
+      return SAMPLE;
     } catch {
-      setTrades(SAMPLE);
+      return SAMPLE;
     }
-  }, []);
+  });
 
   const persist = (next: Trade[]) => {
     setTrades(next);
-    localStorage.setItem(KEY, JSON.stringify(next));
+    try { window.localStorage.setItem(KEY, JSON.stringify(next)); } catch {}
   };
 
   const value = useMemo<TradesCtx>(() => ({
