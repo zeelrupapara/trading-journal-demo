@@ -3,15 +3,14 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import tsConfigPaths from "vite-tsconfig-paths";
-import { cloudflare } from "@cloudflare/vite-plugin";
+import netlify from "@netlify/vite-plugin-tanstack-start";
 
-export default defineConfig(({ command }) => ({
+export default defineConfig({
   plugins: [
     tsConfigPaths({ projects: ["./tsconfig.json"] }),
     tailwindcss(),
-    // Cloudflare plugin only at build time so `vite dev` runs on Node.
-    ...(command === "build" ? [cloudflare()] : []),
     tanstackStart(),
+    netlify(),
     viteReact(),
   ],
   resolve: {
@@ -22,4 +21,4 @@ export default defineConfig(({ command }) => ({
     port: 3000,
     strictPort: false,
   },
-}));
+});

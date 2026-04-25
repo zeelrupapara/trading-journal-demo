@@ -1,0 +1,9 @@
+[build]
+  command = "bun run build"
+  publish = "dist/client"
+  # Vite 7 / TanStack Start need Node 20.19+. Netlify still defaults to 18.
+  environment = { NODE_VERSION = "22" }
+
+[dev]
+  command = "bun run dev"
+  port = 3000
