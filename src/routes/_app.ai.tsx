@@ -8,7 +8,7 @@ import { CsvImport } from "@/components/app/CsvImport";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Send, Sparkles, Bot, User, Plus, MessageSquare, Brain } from "lucide-react";
-import { chatWithAI } from "@/lib/ai-chat";
+import { streamChat } from "@/lib/ai-chat";
 import { Markdown } from "@/components/app/Markdown";
 import { cn } from "@/lib/utils";
 
@@ -121,26 +121,20 @@ function AIPage() {
       // Pre-aggregated context — way smaller than dumping all trades raw, and
       // means the model isn't recomputing what the dashboard already knows.
       const ctx = JSON.stringify(aiContext(trades));
-      const stream = await chatWithAI({
-        data: { messages: updated.messages, tradesContext: ctx },
-      });
-      if (!stream) throw new Error("empty response");
-
-      const reader = stream.getReader();
       let collected = "";
       let firstChunk = true;
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (value?.content) {
-          collected += value.content;
-          upsertAssistant(collected, firstChunk);
-          if (firstChunk) {
-            // Hide the typing dots once real text starts arriving so the user
-            // sees the response replacing the placeholder, not on top of it.
-            setBusy(false);
-            firstChunk = false;
-          }
+      for await (const chunk of streamChat({
+        messages: updated.messages,
+        tradesContext: ctx,
+      })) {
+        if (!chunk) continue;
+        collected += chunk;
+        upsertAssistant(collected, firstChunk);
+        if (firstChunk) {
+          // Hide the typing dots once real text starts arriving so the user
+          // sees the response replacing the placeholder, not on top of it.
+          setBusy(false);
+          firstChunk = false;
         }
       }
       if (firstChunk) upsertAssistant("No response.", true);
