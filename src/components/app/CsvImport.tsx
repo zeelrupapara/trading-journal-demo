@@ -11,6 +11,35 @@ const SAMPLE_CSV = `date,symbol,side,qty,entry,exit,pnl,strategy,notes
 2025-04-10T14:15:00Z,AMD,LONG,200,158.20,156.50,-340,Strategy 3,Stopped out
 `;
 
+// Flexible header mapping — accept multiple broker conventions.
+const HEADER_ALIASES: Record<string, string[]> = {
+  date: ["date", "datetime", "time", "timestamp", "execution time", "trade date", "opened", "open time", "closed"],
+  symbol: ["symbol", "ticker", "instrument", "asset", "pair"],
+  side: ["side", "direction", "action", "type", "position"],
+  qty: ["qty", "quantity", "size", "shares", "amount", "volume", "contracts"],
+  entry: ["entry", "entry price", "open price", "buy price", "avg entry", "price in"],
+  exit: ["exit", "exit price", "close price", "sell price", "avg exit", "price out"],
+  pnl: ["pnl", "p&l", "p/l", "profit", "net", "net pnl", "realized pnl", "result"],
+  strategy: ["strategy", "setup", "playbook", "tag"],
+  notes: ["notes", "note", "comment", "comments", "description"],
+};
+
+function buildKeyMap(headers: string[]): Record<string, string> {
+  const norm = (s: string) => s.trim().toLowerCase();
+  const map: Record<string, string> = {};
+  for (const [canonical, aliases] of Object.entries(HEADER_ALIASES)) {
+    const hit = headers.find(h => aliases.includes(norm(h)));
+    if (hit) map[canonical] = hit;
+  }
+  return map;
+}
+
+function parseSide(raw: string | undefined): Side {
+  const v = (raw || "").trim().toLowerCase();
+  if (["short", "sell", "s", "sld"].includes(v)) return "SHORT";
+  return "LONG";
+}
+
 export function CsvImport() {
   const inp = useRef<HTMLInputElement>(null);
   const { addTrades } = useTrades();
@@ -23,30 +52,46 @@ export function CsvImport() {
       skipEmptyLines: true,
       complete: (res) => {
         try {
+          const headers = res.meta.fields || [];
+          const km = buildKeyMap(headers);
+          if (!km.symbol || !km.date) {
+            toast.error("CSV needs at least a date and symbol column.");
+            setBusy(false);
+            return;
+          }
+          const get = (r: Record<string, string>, k: string) => (km[k] ? r[km[k]] : undefined);
           const trades: Trade[] = res.data
-            .filter(r => r.symbol && r.date)
+            .filter(r => get(r, "symbol") && get(r, "date"))
             .map((r, i) => {
-              const entry = parseFloat(r.entry || "0");
-              const exit = parseFloat(r.exit || "0");
-              const qty = parseFloat(r.qty || "0");
-              const side = ((r.side || "LONG").toUpperCase() as Side);
-              let pnl = parseFloat(r.pnl || "");
+              const entry = parseFloat(get(r, "entry") || "0");
+              const exit = parseFloat(get(r, "exit") || "0");
+              const qty = parseFloat(get(r, "qty") || "0");
+              const side = parseSide(get(r, "side"));
+              const rawPnl = (get(r, "pnl") || "").replace(/[$,()\s]/g, "");
+              let pnl = parseFloat(rawPnl);
               if (isNaN(pnl)) {
                 pnl = (side === "LONG" ? exit - entry : entry - exit) * qty;
               }
+              const dateRaw = get(r, "date") || "";
+              const parsedDate = new Date(dateRaw);
               return {
                 id: `imp-${Date.now()}-${i}`,
-                date: new Date(r.date).toISOString(),
-                symbol: r.symbol.toUpperCase(),
+                date: isNaN(+parsedDate) ? new Date().toISOString() : parsedDate.toISOString(),
+                symbol: (get(r, "symbol") || "").toUpperCase().trim(),
                 side,
                 qty,
                 entry,
                 exit,
                 pnl,
-                strategy: (r.strategy || "Unassigned") as Strategy,
-                notes: r.notes,
+                strategy: ((get(r, "strategy") || "Unassigned") as Strategy),
+                notes: get(r, "notes"),
               };
             });
+          if (!trades.length) {
+            toast.error("No valid rows found in CSV.");
+            setBusy(false);
+            return;
+          }
           addTrades(trades);
           toast.success(`Imported ${trades.length} trade${trades.length === 1 ? "" : "s"}`);
         } catch (e: any) {

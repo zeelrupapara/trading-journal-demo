@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useTrades, fmtCurrency, type Strategy } from "@/lib/trades";
 import { PageHeader } from "@/components/app/PageHeader";
 import { CsvImport } from "@/components/app/CsvImport";
+import { Sparkline } from "@/components/app/Sparkline";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, Trash2 } from "lucide-react";
@@ -13,6 +14,20 @@ export const Route = createFileRoute("/_app/journal")({
 });
 
 const STRATS: Strategy[] = ["Unassigned", "Strategy 1", "Strategy 2", "Strategy 3"];
+
+// deterministic mini price path entry → exit, for the sparkline cell
+function miniSeries(entry: number, exit: number, seed: number) {
+  const n = 16;
+  let s = seed || 1;
+  const rand = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+  const noise = Math.max(Math.abs(exit - entry) * 0.35, entry * 0.002);
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    out.push(entry + (exit - entry) * t + (rand() - 0.5) * noise);
+  }
+  return out;
+}
 
 function JournalPage() {
   const { trades, setStrategy, remove } = useTrades();
@@ -71,6 +86,7 @@ function JournalPage() {
                   <th className="px-4 py-3 text-right font-semibold">Qty</th>
                   <th className="px-4 py-3 text-right font-semibold">Entry</th>
                   <th className="px-4 py-3 text-right font-semibold">Exit</th>
+                  <th className="px-4 py-3 text-center font-semibold">Trend</th>
                   <th className="px-4 py-3 text-right font-semibold">P&L</th>
                   <th className="px-4 py-3 text-left font-semibold">Strategy</th>
                   <th className="px-4 py-3"></th>
@@ -95,6 +111,14 @@ function JournalPage() {
                     <td className="px-4 py-3 text-right font-mono tabular-nums">{t.qty}</td>
                     <td className="px-4 py-3 text-right font-mono tabular-nums">{t.entry.toFixed(2)}</td>
                     <td className="px-4 py-3 text-right font-mono tabular-nums">{t.exit.toFixed(2)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-center">
+                        <Sparkline
+                          data={miniSeries(t.entry, t.exit, Array.from(t.symbol).reduce((a, c) => a + c.charCodeAt(0), 0) + Math.floor(t.entry))}
+                          positive={t.pnl >= 0}
+                        />
+                      </div>
+                    </td>
                     <td className={cn("px-4 py-3 text-right font-mono font-semibold tabular-nums",
                       t.pnl >= 0 ? "text-profit" : "text-loss"
                     )}>{fmtCurrency(t.pnl)}</td>
@@ -115,7 +139,7 @@ function JournalPage() {
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={9} className="px-4 py-12 text-center text-muted-foreground text-sm">No trades match the current filters.</td></tr>
+                  <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">No trades match the current filters.</td></tr>
                 )}
               </tbody>
             </table>
