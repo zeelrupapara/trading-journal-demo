@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppProfileRouteImport } from './routes/_app.profile'
 import { Route as AppJournalRouteImport } from './routes/_app.journal'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppAnalyticsRouteImport } from './routes/_app.analytics'
@@ -31,6 +32,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppProfileRoute = AppProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppJournalRoute = AppJournalRouteImport.update({
   id: '/journal',
@@ -65,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/analytics': typeof AppAnalyticsRoute
   '/dashboard': typeof AppDashboardRoute
   '/journal': typeof AppJournalRoute
+  '/profile': typeof AppProfileRoute
   '/trade/$id': typeof AppTradeIdRoute
 }
 export interface FileRoutesByTo {
@@ -74,6 +81,7 @@ export interface FileRoutesByTo {
   '/analytics': typeof AppAnalyticsRoute
   '/dashboard': typeof AppDashboardRoute
   '/journal': typeof AppJournalRoute
+  '/profile': typeof AppProfileRoute
   '/trade/$id': typeof AppTradeIdRoute
 }
 export interface FileRoutesById {
@@ -85,6 +93,7 @@ export interface FileRoutesById {
   '/_app/analytics': typeof AppAnalyticsRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/journal': typeof AppJournalRoute
+  '/_app/profile': typeof AppProfileRoute
   '/_app/trade/$id': typeof AppTradeIdRoute
 }
 export interface FileRouteTypes {
@@ -96,6 +105,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/dashboard'
     | '/journal'
+    | '/profile'
     | '/trade/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -105,6 +115,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/dashboard'
     | '/journal'
+    | '/profile'
     | '/trade/$id'
   id:
     | '__root__'
@@ -115,6 +126,7 @@ export interface FileRouteTypes {
     | '/_app/analytics'
     | '/_app/dashboard'
     | '/_app/journal'
+    | '/_app/profile'
     | '/_app/trade/$id'
   fileRoutesById: FileRoutesById
 }
@@ -146,6 +158,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_app/profile': {
+      id: '/_app/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof AppProfileRouteImport
+      parentRoute: typeof AppRoute
     }
     '/_app/journal': {
       id: '/_app/journal'
@@ -190,6 +209,7 @@ interface AppRouteChildren {
   AppAnalyticsRoute: typeof AppAnalyticsRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppJournalRoute: typeof AppJournalRoute
+  AppProfileRoute: typeof AppProfileRoute
   AppTradeIdRoute: typeof AppTradeIdRoute
 }
 
@@ -198,6 +218,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAnalyticsRoute: AppAnalyticsRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppJournalRoute: AppJournalRoute,
+  AppProfileRoute: AppProfileRoute,
   AppTradeIdRoute: AppTradeIdRoute,
 }
 
