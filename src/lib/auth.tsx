@@ -18,7 +18,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) setUser(JSON.parse(raw));
-    } catch {}
+    } catch {
+      // best-effort localStorage hydrate; ignore quota/parse errors
+    }
   }, []);
 
   const login = async (email: string, _password: string) => {

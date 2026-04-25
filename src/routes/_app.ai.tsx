@@ -1,11 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useTrades } from "@/lib/trades";
+import { aiContext } from "@/lib/stats";
 import { PageHeader } from "@/components/app/PageHeader";
+import { EmptyState } from "@/components/app/EmptyState";
+import { CsvImport } from "@/components/app/CsvImport";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Send, Sparkles, Bot, User, Plus, MessageSquare } from "lucide-react";
+import { Send, Sparkles, Bot, User, Plus, MessageSquare, Brain } from "lucide-react";
 import { chatWithAI } from "@/lib/ai-chat";
+import { Markdown } from "@/components/app/Markdown";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/ai")({
@@ -29,7 +33,9 @@ function loadChats(): Conversation[] {
   try {
     const raw = localStorage.getItem(CHAT_KEY);
     if (raw) return JSON.parse(raw);
-  } catch {}
+  } catch {
+    // corrupt cache → fall through to empty list
+  }
   return [];
 }
 
@@ -52,14 +58,19 @@ function AIPage() {
     localStorage.setItem(CHAT_KEY, JSON.stringify(next));
   };
 
-  const active = chats.find(c => c.id === activeId) || null;
+  const active = chats.find((c) => c.id === activeId) || null;
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [active?.messages.length, busy]);
 
   const newChat = () => {
-    const c: Conversation = { id: `c-${Date.now()}`, title: "New conversation", messages: [], updated: Date.now() };
+    const c: Conversation = {
+      id: `c-${Date.now()}`,
+      title: "New conversation",
+      messages: [],
+      updated: Date.now(),
+    };
     persist([c, ...chats]);
     setActiveId(c.id);
   };
@@ -80,28 +91,53 @@ function AIPage() {
       messages: [...conv.messages, userMsg],
       updated: Date.now(),
     };
-    let nextChats = chats.map(c => c.id === updated.id ? updated : c);
-    if (!nextChats.find(c => c.id === updated.id)) nextChats = [updated, ...chats];
+    let nextChats = chats.map((c) => (c.id === updated.id ? updated : c));
+    if (!nextChats.find((c) => c.id === updated.id)) nextChats = [updated, ...chats];
     persist(nextChats);
     setInput("");
     setBusy(true);
 
     try {
-      const ctx = JSON.stringify(trades.map(t => ({
-        date: t.date, symbol: t.symbol, side: t.side, qty: t.qty, entry: t.entry, exit: t.exit, pnl: t.pnl, strategy: t.strategy,
-      })));
+      // Pre-aggregated context — way smaller than dumping all trades raw, and
+      // means the model isn't recomputing what the dashboard already knows.
+      const ctx = JSON.stringify(aiContext(trades));
       const res = await chatWithAI({ data: { messages: updated.messages, tradesContext: ctx } });
       const aiMsg: Msg = { role: "assistant", content: res.content };
-      const final: Conversation = { ...updated, messages: [...updated.messages, aiMsg], updated: Date.now() };
-      persist(nextChats.map(c => c.id === final.id ? final : c));
-    } catch (e: any) {
-      const aiMsg: Msg = { role: "assistant", content: "Error: " + (e?.message || "request failed") };
+      const final: Conversation = {
+        ...updated,
+        messages: [...updated.messages, aiMsg],
+        updated: Date.now(),
+      };
+      persist(nextChats.map((c) => (c.id === final.id ? final : c)));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "request failed";
+      const aiMsg: Msg = {
+        role: "assistant",
+        content: "Error: " + msg,
+      };
       const final: Conversation = { ...updated, messages: [...updated.messages, aiMsg] };
-      persist(nextChats.map(c => c.id === final.id ? final : c));
+      persist(nextChats.map((c) => (c.id === final.id ? final : c)));
     } finally {
       setBusy(false);
     }
   };
+
+  if (trades.length === 0) {
+    return (
+      <>
+        <PageHeader
+          title="AI Analytics Chat"
+          subtitle="Ask anything about your trades — powered by Gemini"
+        />
+        <EmptyState
+          icon={<Brain className="h-5 w-5" />}
+          title="No data found"
+          description="The AI analyst needs your trade data to answer questions like 'why am I losing on Mondays?' or 'which strategy has the best R:R?'. Import a CSV to start chatting."
+          action={<CsvImport variant="hero" />}
+        />
+      </>
+    );
+  }
 
   return (
     <>
@@ -110,7 +146,8 @@ function AIPage() {
         subtitle="Ask anything about your trades — powered by Gemini"
         actions={
           <Button size="sm" variant="outline" onClick={newChat}>
-            <Plus className="h-3.5 w-3.5 mr-1.5" />New Chat
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            New Chat
           </Button>
         }
       />
@@ -119,17 +156,23 @@ function AIPage() {
         <div className="w-72 shrink-0 border-r border-border p-4 overflow-y-auto">
           <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold mb-3 flex items-center justify-between">
             Recent Chats
-            <button onClick={newChat} className="text-muted-foreground hover:text-primary"><Plus className="h-3.5 w-3.5" /></button>
+            <button onClick={newChat} className="text-muted-foreground hover:text-primary">
+              <Plus className="h-3.5 w-3.5" />
+            </button>
           </div>
           <div className="space-y-1">
             {chats.length === 0 && (
               <p className="text-xs text-muted-foreground py-8 text-center">No conversations yet</p>
             )}
-            {chats.map(c => (
-              <button key={c.id} onClick={() => setActiveId(c.id)}
-                className={cn("w-full text-left px-3 py-2.5 rounded-md transition-colors group",
-                  activeId === c.id ? "bg-accent/60" : "hover:bg-accent/30"
-                )}>
+            {chats.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setActiveId(c.id)}
+                className={cn(
+                  "w-full text-left px-3 py-2.5 rounded-md transition-colors group",
+                  activeId === c.id ? "bg-accent/60" : "hover:bg-accent/30",
+                )}
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium truncate">{c.title}</p>
@@ -157,9 +200,12 @@ function AIPage() {
                   I have full context on all {trades.length} trades in your journal.
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-w-xl mx-auto">
-                  {SUGGESTIONS.map(s => (
-                    <button key={s} onClick={() => send(s)}
-                      className="text-left px-4 py-3 rounded-md border border-border bg-card/50 hover:bg-accent/40 text-sm transition-colors">
+                  {SUGGESTIONS.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => send(s)}
+                      className="text-left px-4 py-3 rounded-md border border-border bg-card/50 hover:bg-accent/40 text-sm transition-colors"
+                    >
                       {s}
                     </button>
                   ))}
@@ -168,16 +214,37 @@ function AIPage() {
             ) : (
               <div className="max-w-3xl mx-auto space-y-6">
                 {active.messages.map((m, i) => (
-                  <div key={i} className={cn("flex gap-3", m.role === "user" ? "flex-row-reverse" : "")}>
-                    <div className={cn("h-7 w-7 rounded-md flex items-center justify-center shrink-0",
-                      m.role === "user" ? "bg-secondary border border-border" : "bg-primary/20 border border-primary/30"
-                    )}>
-                      {m.role === "user" ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5 text-primary" />}
+                  <div
+                    key={i}
+                    className={cn("flex gap-3", m.role === "user" ? "flex-row-reverse" : "")}
+                  >
+                    <div
+                      className={cn(
+                        "h-7 w-7 rounded-md flex items-center justify-center shrink-0",
+                        m.role === "user"
+                          ? "bg-secondary border border-border"
+                          : "bg-primary/20 border border-primary/30",
+                      )}
+                    >
+                      {m.role === "user" ? (
+                        <User className="h-3.5 w-3.5" />
+                      ) : (
+                        <Bot className="h-3.5 w-3.5 text-primary" />
+                      )}
                     </div>
-                    <div className={cn("max-w-[85%] rounded-lg px-4 py-3 text-sm",
-                      m.role === "user" ? "bg-secondary border border-border" : "bg-card border border-border"
-                    )}>
-                      <div className="whitespace-pre-wrap leading-relaxed">{m.content}</div>
+                    <div
+                      className={cn(
+                        "max-w-[85%] rounded-lg px-4 py-3 text-sm",
+                        m.role === "user"
+                          ? "bg-secondary border border-border"
+                          : "bg-card border border-border",
+                      )}
+                    >
+                      {m.role === "assistant" ? (
+                        <Markdown content={m.content} />
+                      ) : (
+                        <div className="whitespace-pre-wrap leading-relaxed">{m.content}</div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -189,8 +256,14 @@ function AIPage() {
                     <div className="bg-card border border-border rounded-lg px-4 py-3 text-sm">
                       <span className="inline-flex gap-1">
                         <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-pulse" />
-                        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-pulse" style={{ animationDelay: "150ms" }} />
-                        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-pulse" style={{ animationDelay: "300ms" }} />
+                        <span
+                          className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-pulse"
+                          style={{ animationDelay: "150ms" }}
+                        />
+                        <span
+                          className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-pulse"
+                          style={{ animationDelay: "300ms" }}
+                        />
                       </span>
                     </div>
                   </div>
@@ -203,15 +276,25 @@ function AIPage() {
             <div className="max-w-3xl mx-auto">
               {active && active.messages.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-3">
-                  {SUGGESTIONS.slice(0, 3).map(s => (
-                    <button key={s} onClick={() => send(s)} disabled={busy}
-                      className="text-xs px-3 py-1.5 rounded-full bg-secondary/60 hover:bg-secondary border border-border text-muted-foreground hover:text-foreground transition-colors">
+                  {SUGGESTIONS.slice(0, 3).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => send(s)}
+                      disabled={busy}
+                      className="text-xs px-3 py-1.5 rounded-full bg-secondary/60 hover:bg-secondary border border-border text-muted-foreground hover:text-foreground transition-colors"
+                    >
                       {s}
                     </button>
                   ))}
                 </div>
               )}
-              <form onSubmit={(e) => { e.preventDefault(); send(input); }} className="relative">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  send(input);
+                }}
+                className="relative"
+              >
                 <Sparkles className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
                 <Input
                   placeholder="Ask about your trades..."
@@ -220,8 +303,12 @@ function AIPage() {
                   disabled={busy}
                   className="pl-10 pr-12 bg-input/50 h-12"
                 />
-                <Button type="submit" size="icon" disabled={busy || !input.trim()}
-                  className="absolute right-1.5 top-1.5 h-9 w-9">
+                <Button
+                  type="submit"
+                  size="icon"
+                  disabled={busy || !input.trim()}
+                  className="absolute right-1.5 top-1.5 h-9 w-9"
+                >
                   <Send className="h-3.5 w-3.5" />
                 </Button>
               </form>

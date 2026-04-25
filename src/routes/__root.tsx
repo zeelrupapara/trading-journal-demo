@@ -12,7 +12,10 @@ function NotFoundComponent() {
         <h1 className="text-7xl font-bold text-foreground">404</h1>
         <h2 className="mt-4 text-xl font-semibold">Page not found</h2>
         <div className="mt-6">
-          <Link to="/" className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
+          <Link
+            to="/"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+          >
             Go home
           </Link>
         </div>
@@ -27,7 +30,10 @@ export const Route = createRootRoute({
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "QuantJournal — Institutional Trading Journal" },
-      { name: "description", content: "Track, analyze, and improve your trading performance with AI-powered insights." },
+      {
+        name: "description",
+        content: "Track, analyze, and improve your trading performance with AI-powered insights.",
+      },
     ],
     links: [{ rel: "stylesheet", href: appCss }],
   }),

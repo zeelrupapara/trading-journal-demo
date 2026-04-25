@@ -30,14 +30,9 @@ function LoginPage() {
       return;
     }
     setLoading(true);
-    try {
-      await login(email, password);
-      nav({ to: "/dashboard" });
-    } catch (e: any) {
-      setErr(e?.message || "Failed to sign in");
-    } finally {
-      setLoading(false);
-    }
+    await login(email, password);
+    setLoading(false);
+    nav({ to: "/dashboard" });
   };
 
   return (
@@ -55,23 +50,52 @@ function LoginPage() {
 
           <form onSubmit={submit} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-xs uppercase tracking-wider text-muted-foreground">Email Address</Label>
-              <Input id="email" type="email" placeholder="trader@fund.com" value={email}
-                onChange={(e) => setEmail(e.target.value)} className="bg-input/50" autoFocus />
+              <Label
+                htmlFor="email"
+                className="text-xs uppercase tracking-wider text-muted-foreground"
+              >
+                Email Address
+              </Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="trader@fund.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="bg-input/50"
+                autoFocus
+              />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="pwd" className="text-xs uppercase tracking-wider text-muted-foreground">Password</Label>
-              <Input id="pwd" type="password" placeholder="••••••••" value={password}
-                onChange={(e) => setPassword(e.target.value)} className="bg-input/50" />
+              <Label
+                htmlFor="pwd"
+                className="text-xs uppercase tracking-wider text-muted-foreground"
+              >
+                Password
+              </Label>
+              <Input
+                id="pwd"
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="bg-input/50"
+              />
             </div>
             {err && <p className="text-sm text-loss">{err}</p>}
-            <Button type="submit" disabled={loading} className="w-full uppercase tracking-wider font-semibold">
+            <Button
+              type="submit"
+              disabled={loading}
+              className="w-full uppercase tracking-wider font-semibold"
+            >
               {loading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
 
           <div className="mt-6 pt-6 border-t border-border text-center">
-            <p className="text-xs text-muted-foreground">Demo mode — use any email/password to explore.</p>
+            <p className="text-xs text-muted-foreground">
+              Demo mode — use any email/password to explore.
+            </p>
           </div>
         </div>
       </div>

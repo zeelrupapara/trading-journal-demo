@@ -1,11 +1,33 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 
-export type Strategy = "Strategy 1" | "Strategy 2" | "Strategy 3" | "Unassigned";
+export const STRATEGIES = [
+  "Breakout",
+  "Mean Reversion",
+  "Trend Following",
+  "Scalp",
+  "Earnings",
+  "Unassigned",
+] as const;
+export type Strategy = (typeof STRATEGIES)[number];
 export type Side = "LONG" | "SHORT";
+
+export function normalizeStrategy(raw: string | undefined): Strategy {
+  if (!raw) return "Unassigned";
+  const v = raw.trim().toLowerCase();
+  for (const s of STRATEGIES) {
+    if (s.toLowerCase() === v) return s;
+  }
+  // Back-compat for the trial spec's placeholder names.
+  if (v === "strategy 1") return "Breakout";
+  if (v === "strategy 2") return "Mean Reversion";
+  if (v === "strategy 3") return "Trend Following";
+  return "Unassigned";
+}
 
 export type Trade = {
   id: string;
-  date: string; // ISO
+  entryTime: string; // ISO, required — when the trade was opened
+  exitTime?: string; // ISO, optional — when the trade was closed
   symbol: string;
   side: Side;
   qty: number;
@@ -18,7 +40,8 @@ export type Trade = {
 
 type TradesCtx = {
   trades: Trade[];
-  addTrades: (t: Trade[]) => void;
+  /** Adds new trades, dropping anything that looks like a duplicate already in the journal. */
+  addTrades: (t: Trade[]) => { added: number; skipped: number };
   setStrategy: (id: string, s: Strategy) => void;
   remove: (id: string) => void;
   clear: () => void;
@@ -28,45 +51,86 @@ type TradesCtx = {
 const Ctx = createContext<TradesCtx | null>(null);
 const KEY = "qj_trades";
 
-const SAMPLE: Trade[] = [
-  { id: "t1", date: "2025-03-14T13:32:00Z", symbol: "NVDA", side: "LONG", qty: 150, entry: 845.20, exit: 853.47, pnl: 1240, strategy: "Strategy 1", notes: "Pre-market gap up, clean breakout above 845." },
-  { id: "t2", date: "2025-03-12T15:10:00Z", symbol: "TSLA", side: "SHORT", qty: 250, entry: 175.40, exit: 172.00, pnl: 850.5, strategy: "Strategy 2" },
-  { id: "t3", date: "2025-03-11T18:05:00Z", symbol: "AMD", side: "LONG", qty: 300, entry: 162.10, exit: 160.70, pnl: -420, strategy: "Strategy 3" },
-  { id: "t4", date: "2025-03-08T14:00:00Z", symbol: "META", side: "LONG", qty: 50, entry: 485.90, exit: 486.15, pnl: 12.5, strategy: "Strategy 1" },
-  { id: "t5", date: "2025-03-07T19:20:00Z", symbol: "AAPL", side: "SHORT", qty: 150, entry: 172.30, exit: 173.53, pnl: -185, strategy: "Strategy 2" },
-  { id: "t6", date: "2025-03-05T13:45:00Z", symbol: "SPY", side: "LONG", qty: 200, entry: 510.20, exit: 513.10, pnl: 580, strategy: "Strategy 1" },
-  { id: "t7", date: "2025-03-04T20:00:00Z", symbol: "MSFT", side: "LONG", qty: 80, entry: 410.50, exit: 415.20, pnl: 376, strategy: "Strategy 3" },
-  { id: "t8", date: "2025-03-01T14:30:00Z", symbol: "NVDA", side: "SHORT", qty: 60, entry: 850.00, exit: 854.20, pnl: -252, strategy: "Strategy 2" },
-  { id: "t9", date: "2025-02-28T16:00:00Z", symbol: "TSLA", side: "LONG", qty: 100, entry: 195.00, exit: 199.50, pnl: 450, strategy: "Strategy 1" },
-  { id: "t10", date: "2025-02-26T13:35:00Z", symbol: "QQQ", side: "LONG", qty: 120, entry: 432.00, exit: 435.60, pnl: 432, strategy: "Strategy 3" },
-];
+// Hash used both at import time (in lib/csv.ts) and for the in-memory dedupe
+// path below. Keep the shape identical so a re-import after a reload still
+// dedupes against what's in localStorage.
+function tradeHash(t: Trade): string {
+  return `${t.symbol}|${t.entryTime}|${t.qty}|${t.entry}|${t.exit}|${t.side}`;
+}
+
+// Older builds wrote `date` instead of `entryTime`. Migrate on read so existing
+// users don't see an empty journal after upgrading.
+type LegacyTrade = Trade & { date?: string };
+function migrate(raw: LegacyTrade[]): Trade[] {
+  return raw.map((t) => {
+    if (t.entryTime) return t;
+    const date = t.date;
+    return { ...t, entryTime: date ?? new Date().toISOString() } as Trade;
+  });
+}
+
+function loadFromStorage(): Trade[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(KEY);
+    if (!raw) return [];
+    return migrate(JSON.parse(raw));
+  } catch {
+    return [];
+  }
+}
 
 export function TradesProvider({ children }: { children: ReactNode }) {
-  const [trades, setTrades] = useState<Trade[]>(() => {
-    if (typeof window === "undefined") return SAMPLE;
-    try {
-      const raw = window.localStorage.getItem(KEY);
-      if (raw) return JSON.parse(raw);
-      window.localStorage.setItem(KEY, JSON.stringify(SAMPLE));
-      return SAMPLE;
-    } catch {
-      return SAMPLE;
-    }
-  });
+  const [trades, setTrades] = useState<Trade[]>(loadFromStorage);
 
-  const persist = (next: Trade[]) => {
+  const persist = useCallback((next: Trade[]) => {
     setTrades(next);
-    try { window.localStorage.setItem(KEY, JSON.stringify(next)); } catch {}
-  };
+    try {
+      window.localStorage.setItem(KEY, JSON.stringify(next));
+    } catch {
+      // Quota exceeded or private mode — non-fatal; in-memory state is still correct.
+    }
+  }, []);
 
-  const value = useMemo<TradesCtx>(() => ({
-    trades,
-    addTrades: (t) => persist([...t, ...trades]),
-    setStrategy: (id, s) => persist(trades.map(x => x.id === id ? { ...x, strategy: s } : x)),
-    remove: (id) => persist(trades.filter(x => x.id !== id)),
-    clear: () => persist([]),
-    getById: (id) => trades.find(x => x.id === id),
-  }), [trades]);
+  const addTrades = useCallback(
+    (incoming: Trade[]) => {
+      const seen = new Set(trades.map(tradeHash));
+      const fresh: Trade[] = [];
+      let skipped = 0;
+      for (const t of incoming) {
+        const h = tradeHash(t);
+        if (seen.has(h)) {
+          skipped++;
+          continue;
+        }
+        seen.add(h);
+        fresh.push(t);
+      }
+      if (fresh.length > 0) persist([...fresh, ...trades]);
+      return { added: fresh.length, skipped };
+    },
+    [trades, persist],
+  );
+
+  const setStrategy = useCallback(
+    (id: string, s: Strategy) =>
+      persist(trades.map((x) => (x.id === id ? { ...x, strategy: s } : x))),
+    [trades, persist],
+  );
+
+  const remove = useCallback(
+    (id: string) => persist(trades.filter((x) => x.id !== id)),
+    [trades, persist],
+  );
+
+  const clear = useCallback(() => persist([]), [persist]);
+
+  const getById = useCallback((id: string) => trades.find((x) => x.id === id), [trades]);
+
+  const value = useMemo<TradesCtx>(
+    () => ({ trades, addTrades, setStrategy, remove, clear, getById }),
+    [trades, addTrades, setStrategy, remove, clear, getById],
+  );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
@@ -76,10 +140,3 @@ export function useTrades() {
   if (!c) throw new Error("useTrades outside provider");
   return c;
 }
-
-// helpers
-export const fmtCurrency = (n: number) =>
-  (n < 0 ? "-" : "+") + "$" + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-export const fmtCurrencyPlain = (n: number) =>
-  "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
