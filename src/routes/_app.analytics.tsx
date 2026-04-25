@@ -75,8 +75,73 @@ function AnalyticsPage() {
 
   return (
     <>
-      <PageHeader title="Performance" subtitle="Calendar view of your trading days" />
+      <PageHeader title="Performance Calendar" subtitle="Daily P&L heatmap of your trading activity" />
       <div className="p-8 space-y-6">
+        {/* Calendar — hero element */}
+        <div className="metric-card p-6">
+          <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+            <div className="flex items-center gap-2">
+              <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}
+                className="h-8 w-8 rounded border border-border hover:bg-accent/50 flex items-center justify-center">
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="text-base font-semibold uppercase tracking-wider px-3">{monthLabel}</span>
+              <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}
+                className="h-8 w-8 rounded border border-border hover:bg-accent/50 flex items-center justify-center">
+                <ChevronRight className="h-4 w-4" />
+              </button>
+              <button onClick={() => setCursor(new Date(today.getFullYear(), today.getMonth(), 1))}
+                className="ml-2 text-xs px-3 py-1.5 rounded border border-border hover:bg-accent/50 uppercase tracking-wider font-medium">
+                Today
+              </button>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <div className="text-[9px] uppercase tracking-widest text-muted-foreground">Month Net</div>
+                <div className={cn("text-lg font-mono font-semibold tabular-nums",
+                  monthStats.net >= 0 ? "text-profit" : "text-loss")}>
+                  {fmtCurrency(monthStats.net)}
+                </div>
+              </div>
+              <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider text-muted-foreground">
+                <div className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm" style={{ background: "var(--profit)" }} />Profit</div>
+                <div className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm" style={{ background: "var(--loss)" }} />Loss</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-7 gap-2">
+            {["MON","TUE","WED","THU","FRI","SAT","SUN"].map(d => (
+              <div key={d} className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold px-2 pb-1 text-center">{d}</div>
+            ))}
+            {monthGrid.map((c, i) => {
+              if (!c.date) return <div key={i} className="min-h-[88px] rounded bg-secondary/10" />;
+              const stat = dayMap.get(c.date.toDateString());
+              const isToday = c.date.toDateString() === today.toDateString();
+              const tone = stat ? (stat.pnl >= 0 ? "profit" : "loss") : null;
+              return (
+                <div key={i} className={cn(
+                  "min-h-[88px] rounded-md p-2.5 flex flex-col justify-between border transition-all hover:scale-[1.02]",
+                  isToday && "ring-1 ring-primary",
+                  tone === "profit" && "bg-profit/20 border-profit/40",
+                  tone === "loss" && "bg-loss/20 border-loss/40",
+                  !tone && "bg-secondary/15 border-border/40",
+                )}>
+                  <div className="flex items-start justify-between">
+                    <span className={cn("text-xs font-semibold", isToday && "text-primary")}>{c.date.getDate()}</span>
+                    {stat && <span className="text-[9px] text-muted-foreground font-mono">{stat.count}t</span>}
+                  </div>
+                  {stat && (
+                    <div className={cn("text-xs font-mono font-bold tabular-nums truncate",
+                      stat.pnl >= 0 ? "text-profit" : "text-loss"
+                    )}>{fmtCurrency(stat.pnl)}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Month KPIs */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <MetricCard label={`Net P&L · ${cursor.toLocaleDateString("en-US", { month: "short" })}`}
@@ -91,62 +156,6 @@ function AnalyticsPage() {
             value={monthStats.worst ? fmtCurrency(monthStats.worst.pnl) : "—"}
             tone="loss"
             sub={monthStats.worst ? `${monthStats.worst.symbol} · ${new Date(monthStats.worst.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""} />
-        </div>
-
-        {/* Calendar */}
-        <div className="metric-card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}
-                className="h-8 w-8 rounded border border-border hover:bg-accent/50 flex items-center justify-center">
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <span className="text-sm font-semibold uppercase tracking-wider px-3">{monthLabel}</span>
-              <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}
-                className="h-8 w-8 rounded border border-border hover:bg-accent/50 flex items-center justify-center">
-                <ChevronRight className="h-4 w-4" />
-              </button>
-              <button onClick={() => setCursor(new Date(today.getFullYear(), today.getMonth(), 1))}
-                className="ml-2 text-xs px-3 py-1.5 rounded border border-border hover:bg-accent/50 uppercase tracking-wider font-medium">
-                Today
-              </button>
-            </div>
-            <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider text-muted-foreground">
-              <div className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-profit" />Profit</div>
-              <div className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-loss" />Loss</div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-7 gap-1.5">
-            {["MON","TUE","WED","THU","FRI","SAT","SUN"].map(d => (
-              <div key={d} className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold px-2 pb-2">{d}</div>
-            ))}
-            {monthGrid.map((c, i) => {
-              if (!c.date) return <div key={i} className="aspect-square rounded bg-secondary/20" />;
-              const stat = dayMap.get(c.date.toDateString());
-              const isToday = c.date.toDateString() === today.toDateString();
-              const tone = stat ? (stat.pnl >= 0 ? "profit" : "loss") : null;
-              return (
-                <div key={i} className={cn(
-                  "aspect-square rounded p-2 flex flex-col justify-between border transition-colors",
-                  isToday ? "border-primary" : "border-border",
-                  tone === "profit" && "bg-profit/10 border-profit/30",
-                  tone === "loss" && "bg-loss/10 border-loss/30",
-                  !tone && "bg-secondary/20",
-                )}>
-                  <div className="flex items-start justify-between">
-                    <span className={cn("text-[11px] font-medium", isToday && "text-primary")}>{c.date.getDate()}</span>
-                    {stat && <span className="text-[9px] text-muted-foreground font-mono">{stat.count}t</span>}
-                  </div>
-                  {stat && (
-                    <div className={cn("text-[10px] font-mono font-semibold tabular-nums truncate",
-                      stat.pnl >= 0 ? "text-profit" : "text-loss"
-                    )}>{fmtCurrency(stat.pnl)}</div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
         </div>
 
         {/* Daily P&L bar */}
