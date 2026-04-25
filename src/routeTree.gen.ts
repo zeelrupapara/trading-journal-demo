@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppJournalRouteImport } from './routes/_app.journal'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppAnalyticsRouteImport } from './routes/_app.analytics'
+import { Route as AppAiRouteImport } from './routes/_app.ai'
 import { Route as AppTradeIdRouteImport } from './routes/_app.trade.$id'
 
 const LoginRoute = LoginRouteImport.update({
@@ -46,6 +47,11 @@ const AppAnalyticsRoute = AppAnalyticsRouteImport.update({
   path: '/analytics',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAiRoute = AppAiRouteImport.update({
+  id: '/ai',
+  path: '/ai',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppTradeIdRoute = AppTradeIdRouteImport.update({
   id: '/trade/$id',
   path: '/trade/$id',
@@ -55,6 +61,7 @@ const AppTradeIdRoute = AppTradeIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/ai': typeof AppAiRoute
   '/analytics': typeof AppAnalyticsRoute
   '/dashboard': typeof AppDashboardRoute
   '/journal': typeof AppJournalRoute
@@ -63,6 +70,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/ai': typeof AppAiRoute
   '/analytics': typeof AppAnalyticsRoute
   '/dashboard': typeof AppDashboardRoute
   '/journal': typeof AppJournalRoute
@@ -73,6 +81,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/_app/ai': typeof AppAiRoute
   '/_app/analytics': typeof AppAnalyticsRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/journal': typeof AppJournalRoute
@@ -83,17 +92,26 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/ai'
     | '/analytics'
     | '/dashboard'
     | '/journal'
     | '/trade/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/analytics' | '/dashboard' | '/journal' | '/trade/$id'
+  to:
+    | '/'
+    | '/login'
+    | '/ai'
+    | '/analytics'
+    | '/dashboard'
+    | '/journal'
+    | '/trade/$id'
   id:
     | '__root__'
     | '/'
     | '/_app'
     | '/login'
+    | '/_app/ai'
     | '/_app/analytics'
     | '/_app/dashboard'
     | '/_app/journal'
@@ -150,6 +168,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAnalyticsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/ai': {
+      id: '/_app/ai'
+      path: '/ai'
+      fullPath: '/ai'
+      preLoaderRoute: typeof AppAiRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/trade/$id': {
       id: '/_app/trade/$id'
       path: '/trade/$id'
@@ -161,6 +186,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppAiRoute: typeof AppAiRoute
   AppAnalyticsRoute: typeof AppAnalyticsRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppJournalRoute: typeof AppJournalRoute
@@ -168,6 +194,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAiRoute: AppAiRoute,
   AppAnalyticsRoute: AppAnalyticsRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppJournalRoute: AppJournalRoute,
